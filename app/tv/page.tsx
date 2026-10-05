@@ -23,7 +23,8 @@ export default function TVDisplayPage() {
   const [sessionId, setSessionId] = useState<string>('');
   const [joinUrl, setJoinUrl] = useState<string>('');
   const [messages, setMessages] = useState<SubtitleMessage[]>([]);
-  const [isAudioEnabled, setIsAudioEnabled] = useState<boolean>(true);
+  // Default audio dibuat OFF agar sesuai kebijakan autoplay browser
+  const [isAudioEnabled, setIsAudioEnabled] = useState<boolean>(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   // Typewriter Loop Effect
@@ -61,6 +62,18 @@ export default function TVDisplayPage() {
     return () => clearTimeout(timer);
   }, [typedText, isDeleting, messages.length]);
 
+  // Preload daftar voice bawaan browser
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    const loadVoices = () => {
+      window.speechSynthesis.getVoices();
+    };
+    loadVoices();
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+  }, []);
+
   useEffect(() => {
     const randomId = Math.floor(1000 + Math.random() * 9000).toString();
     setSessionId(randomId);
@@ -76,12 +89,22 @@ export default function TVDisplayPage() {
       return;
     }
 
+    if (window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
+    }
     window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = lang.startsWith('zh') ? 'zh-CN' : 'id-ID';
+    const targetLangCode = lang.startsWith('zh') ? 'zh-CN' : 'id-ID';
+    utterance.lang = targetLangCode;
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
+
+    const voices = window.speechSynthesis.getVoices();
+    const matchedVoice = voices.find((v) => v.lang.replace('_', '-').includes(targetLangCode));
+    if (matchedVoice) {
+      utterance.voice = matchedVoice;
+    }
 
     window.speechSynthesis.speak(utterance);
   };
@@ -112,9 +135,21 @@ export default function TVDisplayPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages]);
 
+  // Fungsi toggle audio yang sekaligus memicu aktivasi audio browser
+  const handleToggleAudio = () => {
+    const nextState = !isAudioEnabled;
+    setIsAudioEnabled(nextState);
+
+    if (nextState && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      // Trigger ucapan hening untuk meng-unlock izin audio browser
+      const silent = new SpeechSynthesisUtterance('');
+      window.speechSynthesis.speak(silent);
+    }
+  };
+
   return (
     <main className="flex h-screen w-screen overflow-hidden bg-slate-950 font-sans text-slate-100">
-      {/* LEFT SIDEBAR */}
+      {/* SISI KIRI: Sidebar */}
       <aside className="flex w-96 flex-col justify-between border-r border-slate-800 bg-slate-900/60 p-8 backdrop-blur-md">
         <div>
           <div className="flex items-center gap-3">
@@ -148,19 +183,18 @@ export default function TVDisplayPage() {
           </div>
         </div>
 
-        {/* Audio Toggle */}
-        <div className="border-t border-slate-800/80 pt-4">
+        {/* Audio Toggle & Tips */}
+        <div className="border-t border-slate-800/80 pt-4 space-y-2">
           <button
-            onClick={() => setIsAudioEnabled(!isAudioEnabled)}
-            className={`flex w-full items-center justify-center gap-2 rounded-xl py-3 px-4 font-semibold text-sm transition-all ${
+            onClick={handleToggleAudio}
+            className={`flex w-full items-center justify-center gap-2 rounded-xl py-3 px-4 font-semibold text-sm transition-all duration-200 ${
               isAudioEnabled
-                ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/20'
-                : 'bg-rose-500/10 text-rose-400 border border-rose-500/30 hover:bg-rose-500/20'
+                ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/20 shadow-lg shadow-cyan-950/30'
+                : 'bg-amber-500/10 text-amber-300 border border-amber-500/30 hover:bg-amber-500/20'
             }`}
           >
             {isAudioEnabled ? (
               <>
-                {/* Volume High Icon */}
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                 </svg>
@@ -168,27 +202,44 @@ export default function TVDisplayPage() {
               </>
             ) : (
               <>
-                {/* Volume Off / Muted Icon */}
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                   <path strokeLinecap="round" strokeLinejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
                 </svg>
-                <span>TV Audio Muted</span>
+                <span>Click to Enable TV Audio</span>
               </>
             )}
           </button>
-          <p className="mt-2 text-center text-[10px] text-slate-500">
+          <p className="text-center text-[10px] text-slate-500">
             Powered by DeepL & Google NMT
           </p>
         </div>
       </aside>
 
-      {/* RIGHT DISPLAY */}
-      <section className="flex flex-1 flex-col justify-between p-10">
+      {/* SISI KANAN: Layar Subtitle */}
+      <section className="flex flex-1 flex-col justify-between p-10 relative">
+        {/* Banner Pengingat Audio (Hanya muncul jika audio masih mati) */}
+        {!isAudioEnabled && (
+          <div
+            onClick={handleToggleAudio}
+            className="cursor-pointer mb-4 flex items-center justify-between rounded-2xl border border-amber-500/30 bg-amber-500/10 px-5 py-3 text-amber-200 transition-all hover:bg-amber-500/15"
+          >
+            <div className="flex items-center gap-3">
+              <span className="flex h-2 w-2 rounded-full bg-amber-400 animate-ping" />
+              <p className="text-xs font-medium">
+                Audio is muted by default. Click here or on the left sidebar to enable text-to-speech sound.
+              </p>
+            </div>
+            <span className="text-xs font-bold underline ml-4 whitespace-nowrap">
+              Enable Sound
+            </span>
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto pr-4 space-y-6 pb-28">
           {messages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center text-center text-slate-400">
-              {/* Mic Icon with Breathing Pulse */}
+              {/* Conversation Icon */}
               <div className="relative mb-6 flex items-center justify-center">
                 <div className="absolute h-28 w-28 rounded-full bg-cyan-500/10 animate-ping opacity-30" />
                 <div className="relative z-10 flex items-center justify-center rounded-full border border-slate-800 bg-slate-900 p-6 text-cyan-400 shadow-2xl transition-transform duration-500 hover:scale-105">
